@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+# vc: openSUSE spec file change log tool
+#
+# Copyright 2009 Novell, Inc.
+# Written by Aaron Bockover <abockover@novell.com>
+# Released under the MIT/X11 license
+#
+
+function bail () {
+	echo "Error: $@" 1>&2
+	exit 1
+}
+
+[[ "$1" = "--help" || "$1" = "-h" ]] && {
+	echo "Usage: $0 [package-name]" 1>&2
+	exit 1
+}
+
+# Load configuration
+#
+
+source $HOME/.vcrc 2>/dev/null
+
+VC_DATE_COMMAND=${VC_DATE_COMMAND-date -u}
+VC_EDITOR=${VC_EDITOR-$EDITOR}
+
+[[ -z "$VC_EMAIL_ADDRESS" ]] && {
+	# Extract username for GW account from Pidgin for a good guess
+	[[ -x "$(which xpath 2>/dev/null)" ]] && {
+		VC_EMAIL_ADDRESS=$(xpath $HOME/.purple/accounts.xml \
+			"/account/account[protocol='prpl-novell']/name" 2>/dev/null \
+			| cut -f2 -d\> | cut -f1 -d\<)
+		[[ -z "$VC_EMAIL_ADDRESS" ]] || {
+			VC_EMAIL_ADDRESS="${VC_EMAIL_ADDRESS}@novell.com"
+			echo "VC_EMAIL_ADDRESS=\"$VC_EMAIL_ADDRESS\"" > $HOME/.vcrc
+			echo "Created $HOME/.vcrc for $VC_EMAIL_ADDRESS" 1>&2
+		}
+	}
+
+	# Fall back to a lame default and warn the user to create .vcrc
+	[[ -z "$VC_EMAIL_ADDRESS" ]] && {
+		VC_EMAIL_ADDRESS="${USER}@${HOST}"
+		echo "Warning: create a $HOME/.vcrc file and set VC_EMAIL_ADDRESS" 1>&2
+	}
+}
+
+# Figure out which .changes file to use
+#
+
+[[ ! -z "$1" ]] && {
+	changes_file="$1"
+	[[ -f "$changes_file" ]] || changes_file="${1}.spec"
+	[[ -f "$changes_file" ]] || changes_file="${1}.kiwi"
+	[[ -f "$changes_file" ]] || bail "file or package does not exist: $1"
+} || {
+	changes_file="$(find -maxdepth 1 -type f \
+		\( -name \*.spec -o -name \*.kiwi \) | sort | head -n1)"
+	[[ -f "$changes_file" ]] || bail "could not find any spec or kiwi files"
+}
+
+changes_file="$(basename ${changes_file%.*}.changes)"
+working_changes_file=".${changes_file}.new"
+
+# Generate the new .changes entry
+#
+{ cat <<EOF
+-------------------------------------------------------------------
+$(LANG=C ${VC_DATE_COMMAND}) - ${VC_EMAIL_ADDRESS}
+
+- 
+
+EOF
+} > "$working_changes_file"
+
+[[ -f "$changes_file" ]] && cat "$changes_file" >> "$working_changes_file"
+
+pre_edit_checksum=$(md5sum "$working_changes_file" | cut -f1 -d' ')
+
+# Open the .changes file in an editor
+#
+[[ -z "$VC_EDITOR" ]] && {
+	VC_EDITOR="$(which vim 2>/dev/null)"
+	[[ -x "$VC_EDITOR" ]] || VC_EDITOR="$(which emacs 2>/dev/null)"
+	[[ -x "$VC_EDITOR" ]] || bail "Either export EDITOR, VC_EDITOR, or install vim or emacs"
+}
+
+[[ "$VC_EDITOR" =~ "$(which vim 2>/dev/null)" ]] && VC_EDITOR="$VC_EDITOR +4"
+
+$VC_EDITOR "$working_changes_file"
+
+# Verify that a change was actually entered
+#
+post_edit_checksum=$(md5sum "$working_changes_file" | cut -f1 -d' ')
+
+[[ "$pre_edit_checksum" = "$post_edit_checksum" ]] && {
+	echo "Changes file is unchanged. Reverting to original."
+	rm "$working_changes_file"
+} || {
+	mv "$working_changes_file" "$changes_file"
+}
+
