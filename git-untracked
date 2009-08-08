@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+git status | tr '\t' '#' | awk -F# '/^##/{print $3}'
+
