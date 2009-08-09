@@ -82,7 +82,10 @@ pre_edit_checksum=$(md5sum "$working_changes_file" | cut -f1 -d' ')
 [[ -z "$VC_EDITOR" ]] && {
 	VC_EDITOR="$(which vim 2>/dev/null)"
 	[[ -x "$VC_EDITOR" ]] || VC_EDITOR="$(which emacs 2>/dev/null)"
-	[[ -x "$VC_EDITOR" ]] || bail "Either export EDITOR, VC_EDITOR, or install vim or emacs"
+	[[ -x "$VC_EDITOR" ]] || {
+		rm "$working_changes_file"
+		bail "Either export EDITOR, VC_EDITOR, or install vim or emacs"
+	}
 }
 
 [[ "$VC_EDITOR" =~ "$(which vim 2>/dev/null)" ]] && VC_EDITOR="$VC_EDITOR +4"
