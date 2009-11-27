@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# Script to install all debuginfo/debugsource packages for
+# all dependencies of a given file located in an RPM.
+#
+# Copyright 2009 Aaron Bockover
+# aaron@abock.org
+# Made available under the MIT/X11 license
+#
+
+if test $# -le 0; then
+	echo "Usage: $0 <file or name in PATH>"
+	exit 1
+fi
+
+if test -f "$1"; then
+	TARGET="$1"
+else
+	TARGET="$(which "$1" 2>/dev/null)"
+fi
+
+if test -z "$TARGET"; then
+	echo "'$1' could not be found as a file."
+	exit 1
+fi
+
+TARGET_PACKAGE="$(rpm -qf "$TARGET" --queryformat='%{NAME}' 2>/dev/null)"
+if test $? -ne 0; then
+	echo "$TARGET could not be located in an RPM."
+	exit 1
+fi
+
+IFS_SAVE=$IFS
+IFS=$'\n'
+DEP_PACKAGES="$({ for dep in $(rpm -q --requires "$TARGET_PACKAGE"); do
+	dep="$(echo "$dep" | sed 's,^[[:space:]]*,,g;s,[[:space:]]*$,,')"
+	rpm -q --whatprovides --queryformat='%{NAME}\n' "$dep"
+done } | grep -v '^no package provides' | sort | uniq)"
+IFS=$IFS_SAVE
+
+DEP_PACKAGES_DEBUG=""
+for dep in $DEP_PACKAGES; do
+	DEP_PACKAGES_DEBUG="$DEP_PACKAGES_DEBUG $dep-debuginfo $dep-debugsource "
+done
+
+zypper in $DEP_PACKAGES_DEBUG
